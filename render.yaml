@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: stripe-cebelca-sync
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn stripe_cebelca_sync:app
+    envVars:
+      - key: STRIPE_API_KEY
+        sync: false
+        description: Your Stripe Secret Key (starts with sk_...)
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+        description: Your Stripe Webhook Secret (starts with whsec_...)
+      - key: CEBELCA_API_KEY
+        sync: false
+        description: Your Cebelca/InvoiceFox API Key
