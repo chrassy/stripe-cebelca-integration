@@ -1,0 +1,248 @@
+import os
+import stripe
+import requests
+import json
+from flask import Flask, request, jsonify
+
+# Configuration
+STRIPE_API_KEY = os.getenv('STRIPE_API_KEY')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
+CEBELCA_API_KEY = os.getenv('CEBELCA_API_KEY')
+CEBELCA_APP_NAME = os.getenv('CEBELCA_APP_NAME', 'StripeSync') # Optional identifier
+
+# Initialize Stripe
+stripe.api_key = STRIPE_API_KEY
+
+app = Flask(__name__)
+
+class CebelcaClient:
+    API_URL = "https://www.cebelca.biz/API"
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def _request(self, resource, method, data=None):
+        if data is None:
+            data = {}
+        
+        # Cebelca expects parameters in the query string for _r and _m
+        # and the data as form-urlencoded body.
+        # But wait, the python library example sends:
+        # url: https://.../API?_r=...&_m=...
+        # body: ...
+        
+        params = {
+            '_r': resource,
+            '_m': method
+        }
+        
+        # Requests handles Basic Auth and URL encoding
+        try:
+            response = requests.post(
+                self.API_URL,
+                params=params,
+                auth=(self.api_key, 'x'),
+                data=data
+            )
+            response.raise_for_status()
+            
+            # Cebelca often returns JSON without explicit header, or sometimes text/plain
+            # We try to parse JSON
+            try:
+                return response.json()
+            except ValueError:
+                return response.text
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Error calling Cebelca API [{resource}.{method}]: {e}")
+            if e.response is not None:
+                print(f"Response: {e.response.text}")
+            raise
+
+    def assure_partner(self, name, email, street=None, city=None, postal=None, vat_id=None):
+        """
+        Ensures a partner exists in Cebelca. 
+        Returns the list of matching partners (usually one).
+        """
+        payload = {
+            'name': name,
+            'email': email
+        }
+        if street: payload['street'] = street
+        if city: payload['city'] = city
+        if postal: payload['postal'] = postal
+        if vat_id: payload['vatid'] = vat_id
+        
+        if CEBELCA_APP_NAME:
+            payload['notes'] = f"Synced via {CEBELCA_APP_NAME}"
+
+        # 'assure' method creates or updates
+        return self._request('partner', 'assure', payload)
+
+    def create_invoice_head(self, partner_id, date_sent, date_to_pay, title=None, currency=None):
+        """
+        Creates the invoice header.
+        """
+        payload = {
+            'id_partner': partner_id,
+            'date_sent': date_sent,    # YYYY-MM-DD
+            'date_to_pay': date_to_pay, # YYYY-MM-DD
+            'doctype': 0 # 0 usually means regular invoice
+        }
+        if title:
+            payload['title'] = title  # Custom invoice number, e.g. from Stripe
+        
+        # Note: Currency handling might require creating separate document types in Cebelca
+        # or setting a currency field if supported by your plan/version. 
+        # For now we assume the default currency of the account.
+        
+        return self._request('invoice-sent', 'insert-into', payload)
+
+    def add_line_item(self, invoice_id, title, quantity, price, vat_rate, mu='pcs'):
+        """
+        Adds a line item to the invoice.
+        """
+        payload = {
+            'id_invoice_sent': invoice_id,
+            'title': title,
+            'qty': quantity,
+            'mu': mu,
+            'price': price, # Price per unit
+            'vat': vat_rate, # Percentage, e.g. 22
+            'discount': 0
+        }
+        return self._request('invoice-sent-b', 'insert-into', payload)
+
+    def finalize_invoice(self, invoice_id):
+        """
+        Optional: Mark invoice as issued/fiscalize.
+        Note: Use with caution as this might be irreversible.
+        """
+        # Uncomment if you want to automatically issue the invoice
+        # return self._request('invoice-sent', 'issue', {'id': invoice_id})
+        pass
+
+cebelca = CebelcaClient(CEBELCA_API_KEY)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError as e:
+        # Invalid payload
+        return jsonify({'error': 'Invalid payload'}), 400
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        return jsonify({'error': 'Invalid signature'}), 400
+
+    # Handle the event
+    if event['type'] == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        handle_checkout_session(invoice)
+
+    return jsonify({'status': 'success'}), 200
+
+def handle_checkout_session(invoice):
+    print(f"Processing invoice {invoice['id']}")
+    
+    # 1. Extract Customer Info
+    customer_name = invoice.get('customer_name') or invoice.get('customer_email') or "Unknown Customer"
+    customer_email = invoice.get('customer_email')
+    
+    address = invoice.get('customer_address') or {}
+    street = address.get('line1', '')
+    city = address.get('city', '')
+    postal = address.get('postal_code', '')
+    
+    vat_id = None
+    if invoice.get('customer_tax_ids'):
+         # If tax IDs are expanded or available in the object
+         # This logic depends on Stripe API version and expansion
+         pass 
+    
+    # 2. Sync Partner to Cebelca
+    try:
+        partner_response = cebelca.assure_partner(
+            name=customer_name,
+            email=customer_email,
+            street=street,
+            city=city,
+            postal=postal,
+            vat_id=vat_id
+        )
+        # assure returns a list of results, usually the first one is our partner
+        # We need the ID. The format depends on 'assure' return, likely [{'id': 123, ...}]
+        if isinstance(partner_response, list) and len(partner_response) > 0:
+            partner_id = partner_response[0].get('id')
+        else:
+            # Fallback if structure is different
+            print(f"Unexpected partner response: {partner_response}")
+            return # Abort
+            
+        print(f"Partner synced: ID {partner_id}")
+
+        # 3. Create Invoice Header
+        # Convert timestamp to YYYY-MM-DD
+        from datetime import datetime
+        date_sent = datetime.fromtimestamp(invoice['created']).strftime('%Y-%m-%d')
+        date_due = datetime.fromtimestamp(invoice['due_date'] or invoice['created']).strftime('%Y-%m-%d')
+        
+        # Use Stripe invoice number as reference
+        stripe_invoice_number = invoice.get('number')
+        
+        invoice_response = cebelca.create_invoice_head(
+            partner_id=partner_id,
+            date_sent=date_sent,
+            date_to_pay=date_due,
+            title=stripe_invoice_number
+        )
+        
+        # Assuming insert-into returns [{'id': 456, ...}]
+        if isinstance(invoice_response, list) and len(invoice_response) > 0:
+            cebelca_invoice_id = invoice_response[0].get('id')
+        else:
+             print(f"Failed to create invoice header: {invoice_response}")
+             return
+
+        print(f"Invoice header created: ID {cebelca_invoice_id}")
+
+        # 4. Add Line Items
+        for line in invoice['lines']['data']:
+            description = line.get('description', 'Item')
+            qty = line.get('quantity', 1)
+            # Stripe amounts are in cents
+            unit_amount = line.get('price', {}).get('unit_amount', 0) / 100.0
+            
+            # Extract VAT rate
+            vat_rate = 0
+            if line.get('tax_rates'):
+                # Assuming simple single tax rate
+                vat_rate = line['tax_rates'][0].get('percentage', 0)
+            elif line.get('tax_amounts'):
+                 # Calculate from tax amounts if needed
+                 pass
+            
+            cebelca.add_line_item(
+                invoice_id=cebelca_invoice_id,
+                title=description,
+                quantity=qty,
+                price=unit_amount,
+                vat_rate=vat_rate
+            )
+            
+        print(f"Invoice {stripe_invoice_number} successfully synced to Cebelca.")
+
+    except Exception as e:
+        print(f"Error syncing invoice: {e}")
+        import traceback
+        traceback.print_exc()
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Starting server on port {port}")
+    app.run(host='0.0.0.0', port=port)
