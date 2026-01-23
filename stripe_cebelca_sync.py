@@ -133,10 +133,10 @@ def webhook():
         event = stripe.Webhook.construct_event(
             payload, sig_header, STRIPE_WEBHOOK_SECRET
         )
-    except ValueError as e:
+    except ValueError:
         # Invalid payload
         return jsonify({'error': 'Invalid payload'}), 400
-    except stripe.error.SignatureVerificationError as e:
+    except stripe.error.SignatureVerificationError:
         # Invalid signature
         return jsonify({'error': 'Invalid signature'}), 400
 
@@ -151,40 +151,46 @@ def handle_checkout_session(invoice):
     print(f"Processing invoice {invoice['id']}")
     
     # 1. Extract Customer Info
-    customer_name = invoice.get('customer_name') or invoice.get('customer_email') or "Unknown Customer"
-    customer_email = invoice.get('customer_email')
-    
-    address = invoice.get('customer_address') or {}
-    street = address.get('line1', '')
-    city = address.get('city', '')
-    postal = address.get('postal_code', '')
-    
-    vat_id = None
-    if invoice.get('customer_tax_ids'):
-         # If tax IDs are expanded or available in the object
-         # This logic depends on Stripe API version and expansion
-         pass 
-    
+    # TODO: Uncomment when ready to sync partner info
+    # customer_name = invoice.get('customer_name') or invoice.get('customer_email') or "Unknown Customer"
+    # customer_email = invoice.get('customer_email')
+    #
+    # address = invoice.get('customer_address') or {}
+    # street = address.get('line1', '')
+    # city = address.get('city', '')
+    # postal = address.get('postal_code', '')
+    #
+    # vat_id = None
+    # if invoice.get('customer_tax_ids'):
+    #      # If tax IDs are expanded or available in the object
+    #      # This logic depends on Stripe API version and expansion
+    #      pass
+
     # 2. Sync Partner to Cebelca
     try:
-        partner_response = cebelca.assure_partner(
-            name=customer_name,
-            email=customer_email,
-            street=street,
-            city=city,
-            postal=postal,
-            vat_id=vat_id
-        )
-        # assure returns a list of results, usually the first one is our partner
-        # We need the ID. The format depends on 'assure' return, likely [{'id': 123, ...}]
-        if isinstance(partner_response, list) and len(partner_response) > 0:
-            partner_id = partner_response[0].get('id')
-        else:
-            # Fallback if structure is different
-            print(f"Unexpected partner response: {partner_response}")
-            return # Abort
-            
-        print(f"Partner synced: ID {partner_id}")
+        # TODO: Uncomment this when ready to test partner creation
+        # partner_response = cebelca.assure_partner(
+        #     name=customer_name,
+        #     email=customer_email,
+        #     street=street,
+        #     city=city,
+        #     postal=postal,
+        #     vat_id=vat_id
+        # )
+        # # assure returns a list of results, usually the first one is our partner
+        # # We need the ID. The format depends on 'assure' return, likely [{'id': 123, ...}]
+        # if isinstance(partner_response, list) and len(partner_response) > 0:
+        #     partner_id = partner_response[0].get('id')
+        # else:
+        #     # Fallback if structure is different
+        #     print(f"Unexpected partner response: {partner_response}")
+        #     return # Abort
+        #
+        # print(f"Partner synced: ID {partner_id}")
+
+        # For testing: Use an existing partner ID from your Cebelca account
+        partner_id = 1  # TODO: Replace with a valid partner ID from your Cebelca account
+        print(f"Using test partner ID: {partner_id}")
 
         # 3. Create Invoice Header
         # Convert timestamp to YYYY-MM-DD
@@ -212,30 +218,32 @@ def handle_checkout_session(invoice):
         print(f"Invoice header created: ID {cebelca_invoice_id}")
 
         # 4. Add Line Items
-        for line in invoice['lines']['data']:
-            description = line.get('description', 'Item')
-            qty = line.get('quantity', 1)
-            # Stripe amounts are in cents
-            unit_amount = line.get('price', {}).get('unit_amount', 0) / 100.0
-            
-            # Extract VAT rate
-            vat_rate = 0
-            if line.get('tax_rates'):
-                # Assuming simple single tax rate
-                vat_rate = line['tax_rates'][0].get('percentage', 0)
-            elif line.get('tax_amounts'):
-                 # Calculate from tax amounts if needed
-                 pass
-            
-            cebelca.add_line_item(
-                invoice_id=cebelca_invoice_id,
-                title=description,
-                quantity=qty,
-                price=unit_amount,
-                vat_rate=vat_rate
-            )
-            
-        print(f"Invoice {stripe_invoice_number} successfully synced to Cebelca.")
+        # TODO: Uncomment this when ready to test line items
+        # for line in invoice['lines']['data']:
+        #     description = line.get('description', 'Item')
+        #     qty = line.get('quantity', 1)
+        #     # Stripe amounts are in cents
+        #     unit_amount = line.get('price', {}).get('unit_amount', 0) / 100.0
+        #
+        #     # Extract VAT rate
+        #     vat_rate = 0
+        #     if line.get('tax_rates'):
+        #         # Assuming simple single tax rate
+        #         vat_rate = line['tax_rates'][0].get('percentage', 0)
+        #     elif line.get('tax_amounts'):
+        #          # Calculate from tax amounts if needed
+        #          pass
+        #
+        #     cebelca.add_line_item(
+        #         invoice_id=cebelca_invoice_id,
+        #         title=description,
+        #         quantity=qty,
+        #         price=unit_amount,
+        #         vat_rate=vat_rate
+        #     )
+
+        print(f"Draft invoice created in Cebelca. Invoice ID: {cebelca_invoice_id}")
+        print(f"Stripe invoice: {stripe_invoice_number}")
 
     except Exception as e:
         print(f"Error syncing invoice: {e}")
