@@ -3,12 +3,21 @@ import stripe
 import requests
 import json
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+# Debugging path
+# print(f"DEBUG: CWD is {os.getcwd()}") # Removed debug print
+env_path = os.path.join(os.path.dirname(__file__), '.env')
+# print(f"DEBUG: Looking for .env at {env_path}") # Removed debug print
+# print(f"DEBUG: .env exists? {os.path.exists(env_path)}") # Removed debug print
+
+load_dotenv(dotenv_path=env_path)
 
 # Configuration
-STRIPE_API_KEY = os.getenv('STRIPE_API_KEY')
-STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
-CEBELCA_API_KEY = os.getenv('CEBELCA_API_KEY')
-CEBELCA_APP_NAME = os.getenv('CEBELCA_APP_NAME', 'StripeSync') # Optional identifier
+STRIPE_API_KEY = os.getenv('STRIPE_API_KEY', '').strip()
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '').strip()
+CEBELCA_API_KEY = os.getenv('CEBELCA_API_KEY', '').strip()
+CEBELCA_APP_NAME = os.getenv('CEBELCA_APP_NAME', 'StripeSync').strip()
 
 # Initialize Stripe
 stripe.api_key = STRIPE_API_KEY
@@ -208,9 +217,16 @@ def handle_checkout_session(invoice):
             title=stripe_invoice_number
         )
         
-        # Assuming insert-into returns [{'id': 456, ...}]
+        # The response is a nested list: [[{'id': 123}]]
         if isinstance(invoice_response, list) and len(invoice_response) > 0:
-            cebelca_invoice_id = invoice_response[0].get('id')
+            first_item = invoice_response[0]
+            if isinstance(first_item, list) and len(first_item) > 0:
+                cebelca_invoice_id = first_item[0].get('id')
+            elif isinstance(first_item, dict):
+                 cebelca_invoice_id = first_item.get('id')
+            else:
+                 print(f"Unexpected response structure item: {first_item}")
+                 return
         else:
              print(f"Failed to create invoice header: {invoice_response}")
              return
