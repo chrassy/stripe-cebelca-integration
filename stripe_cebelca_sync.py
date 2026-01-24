@@ -88,24 +88,26 @@ class CebelcaClient:
         # 'assure' method creates or updates
         return self._request('partner', 'assure', payload)
 
-    def create_invoice_head(self, partner_id, date_sent, date_to_pay, title=None, currency=None):
+    def create_invoice_head(self, partner_id, date_sent, date_to_pay, date_served, id_document_ext=None, title=None):
         """
-        Creates the invoice header.
+        Creates the invoice header using insert-smart-2.
         """
         payload = {
             'id_partner': partner_id,
-            'date_sent': date_sent,    # YYYY-MM-DD
-            'date_to_pay': date_to_pay, # YYYY-MM-DD
-            'doctype': 0 # 0 usually means regular invoice
+            'date_sent': date_sent,    # dd.mm.yyyy
+            'date_to_pay': date_to_pay, # dd.mm.yyyy
+            'date_served': date_served, # dd.mm.yyyy
+            'id_currency': 2, # EUR? Adjust if needed
+            'conv_rate': 0,
+            'doctype': 0
         }
+        if id_document_ext:
+            payload['id_document_ext'] = id_document_ext
+        
         if title:
-            payload['title'] = title  # Custom invoice number, e.g. from Stripe
+            payload['title'] = title 
         
-        # Note: Currency handling might require creating separate document types in Cebelca
-        # or setting a currency field if supported by your plan/version. 
-        # For now we assume the default currency of the account.
-        
-        return self._request('invoice-sent', 'insert-into', payload)
+        return self._request('invoice-sent', 'insert-smart-2', payload)
 
     def add_line_item(self, invoice_id, title, quantity, price, vat_rate, mu='pcs'):
         """
@@ -160,16 +162,15 @@ def handle_checkout_session(invoice):
     print(f"Processing invoice {invoice['id']}")
     
     # 1. Extract Customer Info
-    # TODO: Uncomment when ready to sync partner info
-    # customer_name = invoice.get('customer_name') or invoice.get('customer_email') or "Unknown Customer"
-    # customer_email = invoice.get('customer_email')
-    #
-    # address = invoice.get('customer_address') or {}
-    # street = address.get('line1', '')
-    # city = address.get('city', '')
-    # postal = address.get('postal_code', '')
-    #
-    # vat_id = None
+    customer_name = invoice.get('customer_name') or invoice.get('customer_email') or "Unknown Customer"
+    customer_email = invoice.get('customer_email')
+    
+    address = invoice.get('customer_address') or {}
+    street = address.get('line1', '')
+    city = address.get('city', '')
+    postal = address.get('postal_code', '')
+    
+    vat_id = None
     # if invoice.get('customer_tax_ids'):
     #      # If tax IDs are expanded or available in the object
     #      # This logic depends on Stripe API version and expansion
@@ -177,36 +178,45 @@ def handle_checkout_session(invoice):
 
     # 2. Sync Partner to Cebelca
     try:
-        # TODO: Uncomment this when ready to test partner creation
-        # partner_response = cebelca.assure_partner(
-        #     name=customer_name,
-        #     email=customer_email,
-        #     street=street,
-        #     city=city,
-        #     postal=postal,
-        #     vat_id=vat_id
-        # )
-        # # assure returns a list of results, usually the first one is our partner
-        # # We need the ID. The format depends on 'assure' return, likely [{'id': 123, ...}]
-        # if isinstance(partner_response, list) and len(partner_response) > 0:
-        #     partner_id = partner_response[0].get('id')
-        # else:
-        #     # Fallback if structure is different
-        #     print(f"Unexpected partner response: {partner_response}")
-        #     return # Abort
-        #
-        # print(f"Partner synced: ID {partner_id}")
+        partner_response = cebelca.assure_partner(
+            name=customer_name,
+            email=customer_email,
+            street=street,
+            city=city,
+            postal=postal,
+            vat_id=vat_id
+        )
 
-        # For testing: Use an existing partner ID from your Cebelca account
-        partner_id = 1  # TODO: Replace with a valid partner ID from your Cebelca account
-        print(f"Using test partner ID: {partner_id}")
+        # assure returns a list of results, e.g. [[{'id': 68, ...}]]
+        if isinstance(partner_response, list) and len(partner_response) > 0:
+            first_match = partner_response[0]
+            if isinstance(first_match, list) and len(first_match) > 0:
+                 # Nested list case
+                 partner_id = first_match[0].get('id')
+            elif isinstance(first_match, dict):
+                 # Flat list case
+                 partner_id = first_match.get('id')
+            else:
+                 print(f"Unexpected partner item type: {type(first_match)}")
+                 partner_id = None
+        else:
+            # Fallback if structure is different
+            print(f"Unexpected partner response structure: {partner_response}")
+            return # Abort
+        
+        if not partner_id:
+             print("Could not extract partner ID")
+             return
+
+        print(f"Partner synced: ID {partner_id}")
 
         # 3. Create Invoice Header
-        # Convert timestamp to YYYY-MM-DD
+        # Convert timestamp to dd.mm.yyyy
         from datetime import datetime
-        date_sent = datetime.fromtimestamp(invoice['created']).strftime('%Y-%m-%d')
-        date_due = datetime.fromtimestamp(invoice['due_date'] or invoice['created']).strftime('%Y-%m-%d')
-        
+        date_sent = datetime.fromtimestamp(invoice['created']).strftime('%d.%m.%Y')
+        date_due = datetime.fromtimestamp(invoice['due_date'] or invoice['created']).strftime('%d.%m.%Y')
+        date_served = date_sent # Assuming served on creation for now
+
         # Use Stripe invoice number as reference
         stripe_invoice_number = invoice.get('number')
         
@@ -214,6 +224,8 @@ def handle_checkout_session(invoice):
             partner_id=partner_id,
             date_sent=date_sent,
             date_to_pay=date_due,
+            date_served=date_served,
+            id_document_ext=stripe_invoice_number,
             title=stripe_invoice_number
         )
         
