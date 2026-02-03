@@ -88,7 +88,7 @@ class CebelcaClient:
         # 'assure' method creates or updates
         return self._request('partner', 'assure', payload)
 
-    def create_invoice_head(self, partner_id, date_sent, date_to_pay, date_served, id_document_ext=None, title=None):
+    def create_invoice_head(self, partner_id, date_sent, date_to_pay, date_served, id_document_ext=None, title=None, currency='EUR'):
         """
         Creates the invoice header using insert-smart-2.
         """
@@ -97,7 +97,8 @@ class CebelcaClient:
             'date_sent': date_sent,    # dd.mm.yyyy
             'date_to_pay': date_to_pay, # dd.mm.yyyy
             'date_served': date_served, # dd.mm.yyyy
-            'id_currency': 2, # EUR? Adjust if needed
+            'date_served': date_served, # dd.mm.yyyy
+            'id_currency': currency, # Pass currency (e.g. 'EUR' or ID)
             'conv_rate': 0,
             'doctype': 0
         }
@@ -220,13 +221,17 @@ def handle_checkout_session(invoice):
         # Use Stripe invoice number as reference
         stripe_invoice_number = invoice.get('number')
         
+        # Extract currency
+        currency_id = 2 
+
         invoice_response = cebelca.create_invoice_head(
             partner_id=partner_id,
             date_sent=date_sent,
             date_to_pay=date_due,
             date_served=date_served,
             id_document_ext=stripe_invoice_number,
-            title=stripe_invoice_number
+            title=stripe_invoice_number,
+            currency=currency_id
         )
         
         # The response is a nested list: [[{'id': 123}]]
@@ -246,29 +251,28 @@ def handle_checkout_session(invoice):
         print(f"Invoice header created: ID {cebelca_invoice_id}")
 
         # 4. Add Line Items
-        # TODO: Uncomment this when ready to test line items
-        # for line in invoice['lines']['data']:
-        #     description = line.get('description', 'Item')
-        #     qty = line.get('quantity', 1)
-        #     # Stripe amounts are in cents
-        #     unit_amount = line.get('price', {}).get('unit_amount', 0) / 100.0
-        #
-        #     # Extract VAT rate
-        #     vat_rate = 0
-        #     if line.get('tax_rates'):
-        #         # Assuming simple single tax rate
-        #         vat_rate = line['tax_rates'][0].get('percentage', 0)
-        #     elif line.get('tax_amounts'):
-        #          # Calculate from tax amounts if needed
-        #          pass
-        #
-        #     cebelca.add_line_item(
-        #         invoice_id=cebelca_invoice_id,
-        #         title=description,
-        #         quantity=qty,
-        #         price=unit_amount,
-        #         vat_rate=vat_rate
-        #     )
+        for line in invoice['lines']['data']:
+            description = line.get('description', 'Item')
+            qty = line.get('quantity', 1)
+            # Stripe amounts are in cents
+            unit_amount = line.get('price', {}).get('unit_amount', 0) / 100.0
+
+            # Extract VAT rate
+            vat_rate = 0
+            if line.get('tax_rates'):
+                # Assuming simple single tax rate
+                vat_rate = line['tax_rates'][0].get('percentage', 0)
+            elif line.get('tax_amounts'):
+                 # Calculate from tax amounts if needed
+                 pass
+
+            cebelca.add_line_item(
+                invoice_id=cebelca_invoice_id,
+                title=description,
+                quantity=qty,
+                price=unit_amount,
+                vat_rate=vat_rate
+            )
 
         print(f"Draft invoice created in Cebelca. Invoice ID: {cebelca_invoice_id}")
         print(f"Stripe invoice: {stripe_invoice_number}")
