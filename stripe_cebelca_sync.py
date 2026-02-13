@@ -95,12 +95,13 @@ class CebelcaClient:
         payload = {
             'id_partner': partner_id,
             'date_sent': date_sent,    # dd.mm.yyyy
-            'date_to_pay': date_to_pay, # dd.mm.yyyy
             'date_served': date_served, # dd.mm.yyyy
+            'date_to_pay': date_to_pay, # dd.mm.yyyy
             'id_currency': currency, # Pass currency (e.g. 'EUR' or ID)
             'conv_rate': 0,
             'doctype': 0,
-            'payment': 'paid'
+            'payment': 'paid',
+            'payment_act': 1
         }
         if id_document_ext:
             payload['id_document_ext'] = id_document_ext
