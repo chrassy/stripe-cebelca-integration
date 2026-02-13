@@ -222,7 +222,7 @@ def handle_checkout_session(invoice):
         stripe_invoice_number = invoice.get('number')
         
         # Extract currency
-        currency_id = 2 
+        currency_code = invoice.get('currency', 'EUR').upper()
 
         invoice_response = cebelca.create_invoice_head(
             partner_id=partner_id,
@@ -231,7 +231,7 @@ def handle_checkout_session(invoice):
             date_served=date_served,
             id_document_ext=stripe_invoice_number,
             title=stripe_invoice_number,
-            currency=currency_id
+            currency=currency_code
         )
         
         # The response is a nested list: [[{'id': 123}]]
