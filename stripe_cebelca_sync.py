@@ -221,8 +221,11 @@ def handle_checkout_session(invoice):
         # Use Stripe invoice number as reference
         stripe_invoice_number = invoice.get('number')
         
-        # Extract currency
+        # Extract currency and map to ID
         currency_code = invoice.get('currency', 'EUR').upper()
+        # Mapping: EUR=1. Default to 1 if unknown.
+        currency_map = {'EUR': 1} 
+        currency_id = currency_map.get(currency_code, 1)
 
         invoice_response = cebelca.create_invoice_head(
             partner_id=partner_id,
@@ -231,7 +234,7 @@ def handle_checkout_session(invoice):
             date_served=date_served,
             id_document_ext=stripe_invoice_number,
             title=stripe_invoice_number,
-            currency=currency_code
+            currency=currency_id
         )
         
         # The response is a nested list: [[{'id': 123}]]
