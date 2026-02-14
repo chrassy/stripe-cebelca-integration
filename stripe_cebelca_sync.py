@@ -1,4 +1,5 @@
 import os
+import re
 import stripe
 import requests
 import json
@@ -261,6 +262,10 @@ def handle_checkout_session(invoice):
         # 4. Add Line Items
         for line in invoice['lines']['data']:
             description = line.get('description', 'Item')
+            # Simplify description: remove leading "1 x " and text in parentheses
+            if description:
+                description = re.sub(r'^\d+\s*[x×]\s*', '', description)
+                description = re.sub(r'\s*\(.*$', '', description)
             qty = line.get('quantity', 1)
             # Stripe amounts are in cents
             unit_amount = line.get('price', {}).get('unit_amount', 0) / 100.0
