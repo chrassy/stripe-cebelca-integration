@@ -5,7 +5,6 @@ import requests
 import json
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-import ssl
 
 # Debugging path
 # print(f"DEBUG: CWD is {os.getcwd()}") # Removed debug print
@@ -20,8 +19,6 @@ STRIPE_API_KEY = os.getenv('STRIPE_API_KEY', '').strip()
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '').strip()
 CEBELCA_API_KEY = os.getenv('CEBELCA_API_KEY', '').strip()
 CEBELCA_APP_NAME = os.getenv('CEBELCA_APP_NAME', 'StripeSync').strip()
-GMAIL_USER = 'absfokus@gmail.com'
-EMAIL_RECIPIENT = 'aljaz.klanecek@gmail.com'
 
 # Initialize Stripe
 stripe.api_key = STRIPE_API_KEY
@@ -290,54 +287,10 @@ def handle_checkout_session(invoice):
         print(f"Draft invoice created in Cebelca. Invoice ID: {cebelca_invoice_id}")
         print(f"Stripe invoice: {stripe_invoice_number}")
 
-        # 5. Send Email Notification
-        try:
-            email_subject = f"New Invoice Created: {stripe_invoice_number}"
-            email_body = f"""
-            A new invoice has been created in Cebelca.
-            
-            Stripe Invoice: {stripe_invoice_number}
-            Cebelca Invoice ID: {cebelca_invoice_id}
-            Customer: {customer_name} ({customer_email})
-            Amount: {invoice.get('total', 0) / 100.0} {currency_code}
-            
-            Please check Cebelca for details.
-            """
-            send_email_notification(email_subject, email_body)
-        except Exception as e:
-            print(f"Failed to send email notification: {e}")
-
     except Exception as e:
         print(f"Error syncing invoice: {e}")
         import traceback
         traceback.print_exc()
-
-def send_email_notification(subject, body):
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-
-    sender_email = GMAIL_USER
-    password = os.getenv('GMAIL_PASSWORD')
-    receiver_email = EMAIL_RECIPIENT
-
-    if not sender_email or not password or not receiver_email:
-        print("Email credentials or recipient not configured. Skipping email.")
-        return
-
-    message = MIMEMultipart("alternative")
-    message["Subject"] = subject
-    message["From"] = sender_email
-    message["To"] = receiver_email
-
-    part1 = MIMEText(body, "plain")
-    message.attach(part1)
-
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(sender_email, password)
-        server.sendmail(sender_email, receiver_email, message.as_string())
-    print(f"Email sent to {receiver_email}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
