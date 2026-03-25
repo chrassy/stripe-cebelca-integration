@@ -89,7 +89,7 @@ class CebelcaClient:
         # 'assure' method creates or updates
         return self._request('partner', 'assure', payload)
 
-    def create_invoice_head(self, partner_id, date_sent, date_to_pay, date_served, id_document_ext=None, title=None, currency='EUR'):
+    def create_invoice_head(self, partner_id, date_sent, date_to_pay, date_served, id_document_ext=None, title=None, currency=None):
         """
         Creates the invoice header using insert-smart-2.
         """
@@ -98,12 +98,13 @@ class CebelcaClient:
             'date_sent': date_sent,    # dd.mm.yyyy
             'date_served': date_served, # dd.mm.yyyy
             'date_to_pay': date_to_pay, # dd.mm.yyyy
-            'id_currency': currency, # Pass currency (e.g. 'EUR' or ID)
             'conv_rate': 0,
             'doctype': 0,
             'payment': 'paid',
             'payment_act': 1
         }
+        if currency is not None:
+            payload['id_currency'] = currency
         if id_document_ext:
             payload['id_document_ext'] = id_document_ext
         
@@ -223,11 +224,11 @@ def handle_checkout_session(invoice):
         # Use Stripe invoice number as reference
         stripe_invoice_number = invoice.get('number')
         
-        # Extract currency and map to ID
+        # Extract currency and map to Cebelca ID
         currency_code = invoice.get('currency', 'EUR').upper()
-        # Mapping: EUR=1. Default to 1 if unknown.
-        currency_map = {'EUR': 1} 
-        currency_id = currency_map.get(currency_code, 1)
+        # Mapping: Cebelca uses no id_currency for the account default (EUR). USD is ID 2.
+        currency_map = {'USD': 2} 
+        currency_id = currency_map.get(currency_code, None)
 
         invoice_response = cebelca.create_invoice_head(
             partner_id=partner_id,
