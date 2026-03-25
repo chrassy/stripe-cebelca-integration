@@ -2,16 +2,11 @@ import os
 import re
 import stripe
 import requests
-import json
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 # Debugging path
-# print(f"DEBUG: CWD is {os.getcwd()}") # Removed debug print
 env_path = os.path.join(os.path.dirname(__file__), '.env')
-# print(f"DEBUG: Looking for .env at {env_path}") # Removed debug print
-# print(f"DEBUG: .env exists? {os.path.exists(env_path)}") # Removed debug print
-
 load_dotenv(dotenv_path=env_path)
 
 # Configuration
@@ -225,9 +220,9 @@ def handle_checkout_session(invoice):
         
         # Extract currency and map to ID
         currency_code = invoice.get('currency', 'EUR').upper()
-        # Mapping: EUR=1. Default to 1 if unknown.
-        currency_map = {'EUR': 1} 
-        currency_id = currency_map.get(currency_code, 1)
+        # Mapping: EUR=2. Default to 2 if unknown.
+        currency_map = {'EUR': 2} 
+        currency_id = currency_map.get(currency_code, 2)
 
         invoice_response = cebelca.create_invoice_head(
             partner_id=partner_id,
