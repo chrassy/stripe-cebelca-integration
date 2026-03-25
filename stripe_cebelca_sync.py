@@ -2,16 +2,11 @@ import os
 import re
 import stripe
 import requests
-import json
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 # Debugging path
-# print(f"DEBUG: CWD is {os.getcwd()}") # Removed debug print
 env_path = os.path.join(os.path.dirname(__file__), '.env')
-# print(f"DEBUG: Looking for .env at {env_path}") # Removed debug print
-# print(f"DEBUG: .env exists? {os.path.exists(env_path)}") # Removed debug print
-
 load_dotenv(dotenv_path=env_path)
 
 # Configuration
