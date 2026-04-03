@@ -14,7 +14,10 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: fokus
+    strategy:
+      matrix:
+        environment: [fokus, evolucija]
+    environment: ${{ matrix.environment }}
 
     permissions:
       contents: 'read'
@@ -41,5 +44,4 @@ jobs:
           STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
           CEBELCA_API_KEY=${{ secrets.CEBELCA_API_KEY }}
           CEBELCA_APP_NAME=${{ secrets.CEBELCA_APP_NAME }}
-          GMAIL_PASSWORD=${{ secrets.GMAIL_PASSWORD }}
 
