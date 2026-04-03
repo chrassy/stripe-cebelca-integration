@@ -36,7 +36,8 @@ jobs:
     - name: Deploy to Cloud Run
       uses: google-github-actions/deploy-cloudrun@v2
       with:
-        service: ${{ env.SERVICE_NAME }}
+        service: ${{ env.SERVICE_NAME }}-${{ matrix.environment }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
         region: ${{ env.REGION }}
         source: .
         env_vars: |
