@@ -158,8 +158,10 @@ def webhook():
     return jsonify({'status': 'success'}), 200
 
 def handle_checkout_session(invoice):
-    print(f"Processing invoice {invoice['id']}")
-    
+    # Convert StripeObject to dict to support .get() access
+    if hasattr(invoice, 'to_dict'):
+        invoice = invoice.to_dict()
+
     # 1. Extract Customer Info
     customer_name = invoice.get('customer_name') or invoice.get('customer_email') or "Unknown Customer"
     customer_email = invoice.get('customer_email')
